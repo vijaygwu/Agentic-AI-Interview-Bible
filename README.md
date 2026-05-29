@@ -30,9 +30,13 @@ tests/
 Each chapter folder has a short README, an interview prompt in `exercise.py`, a
 complete `solution.py`, and a deterministic pytest file under `tests/`.
 
-The rewritten interview-book structure also includes `problems/`. Each problem
-folder is meant to be used directly in timed practice: read the README, start
-from `starter.py`, compare against `solution.py`, and run the local tests.
+The `problems/` directory holds the fully runnable problem folder
+`agent-loop-basic/` (README, `starter.py`, `solution.py`, and local tests) for
+timed practice: read the README, start from `starter.py`, compare against
+`solution.py`, and run the local tests. The remaining problems in the book
+present their solutions inline in the text and reuse the primitives in
+`agentic_interview_bible`, so you work them against the package rather than a
+per-problem scaffold.
 
 ## First Exercises
 
