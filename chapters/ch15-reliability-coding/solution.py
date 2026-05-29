@@ -41,6 +41,10 @@ def call_with_retry_budget_and_circuit(
     rng=random.random,
 ):
     def protected_operation():
+        # A single fixed `now` is intentional here: retries within one
+        # protected call are sub-second, so they share a clock reading.
+        # Modeling retries that span the breaker's recovery window would
+        # require advancing `now` between attempts.
         return breaker.call(operation, now=now)
 
     return call_with_retry_budget(

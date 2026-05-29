@@ -104,6 +104,8 @@ def build_executor(
     tools: Iterable[Tool],
     max_steps: int = 4,
 ) -> AgentExecutor:
+    # This factory is given; your task is to implement ToolRegistry and
+    # AgentExecutor above (the methods that currently raise NotImplementedError).
     return AgentExecutor(
         model=model,
         tools=ToolRegistry(tools),

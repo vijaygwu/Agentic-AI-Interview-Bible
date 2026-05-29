@@ -246,6 +246,9 @@ class AgentExecutor:
 
 
 def _estimate_prompt_tokens(prompt: str, history: list[HistoryEvent]) -> int:
+    # Deliberate teaching fallback: a word count under-counts real BPE tokens.
+    # Production budgets must charge the actual tokenizer count or the
+    # provider/gateway-reported usage, not this estimate.
     history_tokens = sum(len(str(event).split()) for event in history)
     return max(1, len(prompt.split()) + history_tokens)
 

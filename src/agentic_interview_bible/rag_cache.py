@@ -49,3 +49,25 @@ class EvidenceCache:
 
     def get(self, key: str, policy_version: str) -> Evidence | None:
         return self._items.get((key, policy_version))
+
+
+class PerTenantEvidenceCache:
+    """Evidence cache that scopes every entry by a PermissionContext, so
+    isolation is a property of the cache rather than the caller. Prefer this
+    over a bare ``EvidenceCache`` when serving more than one tenant or actor:
+    two instances with different contexts cannot read each other's evidence.
+    """
+
+    def __init__(self, context: PermissionContext) -> None:
+        self._context = context
+        self._items: dict[tuple[str, str, str], Evidence] = {}
+
+    def put(self, evidence: Evidence) -> None:
+        if evidence.contains_sensitive_data:
+            raise CachePolicyError("sensitive evidence must not be cached")
+        self._items[
+            (self._context.cache_prefix(), evidence.key, evidence.policy_version)
+        ] = evidence
+
+    def get(self, key: str, policy_version: str) -> Evidence | None:
+        return self._items.get((self._context.cache_prefix(), key, policy_version))

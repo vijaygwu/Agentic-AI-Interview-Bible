@@ -8,7 +8,13 @@ from agentic_interview_bible.circuit_breaker import (
 from agentic_interview_bible.cost_budget import BudgetExceededError, TaskBudget
 from agentic_interview_bible.eval_harness import EvalCase, run_eval_cases
 from agentic_interview_bible.observability import InMemoryTraceSink, TraceEvent
-from agentic_interview_bible.rag_cache import CachePolicyError, Evidence, EvidenceCache
+from agentic_interview_bible.rag_cache import (
+    CachePolicyError,
+    Evidence,
+    EvidenceCache,
+    PermissionContext,
+    PerTenantEvidenceCache,
+)
 from agentic_interview_bible.release_gate import decide_release
 from agentic_interview_bible.retry_budget import RetryBudget, RetryExhaustedError
 from agentic_interview_bible.structured_outputs import (
@@ -199,6 +205,19 @@ def test_evidence_cache_keeps_policy_versions_separate() -> None:
 
     assert cache.get("refund", "v1").source_id == "doc-1"
     assert cache.get("refund", "v2").source_id == "doc-2"
+
+
+def test_per_tenant_evidence_cache_isolates_tenants() -> None:
+    ctx_a = PermissionContext(actor_id="u1", tenant_id="t1", scopes=("read",))
+    ctx_b = PermissionContext(actor_id="u1", tenant_id="t2", scopes=("read",))
+    cache_a = PerTenantEvidenceCache(ctx_a)
+    cache_b = PerTenantEvidenceCache(ctx_b)
+
+    cache_a.put(Evidence("refund", "tenant-1 evidence", "doc-1", "v1"))
+
+    # Same key + policy, different tenant context: must not read across.
+    assert cache_a.get("refund", "v1").source_id == "doc-1"
+    assert cache_b.get("refund", "v1") is None
 
 
 def test_evidence_cache_rejects_sensitive_data() -> None:

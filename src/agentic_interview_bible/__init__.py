@@ -21,7 +21,13 @@ from .cost_budget import BudgetExceededError, TaskBudget
 from .eval_harness import EvalCase, EvalReport, EvalResult, redact_output, run_eval_cases
 from .mock_llm import MockLLM, ScriptedStep
 from .observability import InMemoryTraceSink, TraceEvent
-from .rag_cache import CachePolicyError, Evidence, EvidenceCache, PermissionContext
+from .rag_cache import (
+    CachePolicyError,
+    Evidence,
+    EvidenceCache,
+    PermissionContext,
+    PerTenantEvidenceCache,
+)
 from .release_gate import ReleaseDecision, decide_release
 from .retry_budget import RetryBudget, RetryExhaustedError
 from .structured_outputs import (
@@ -53,6 +59,7 @@ __all__ = [
     "MaxStepsExceededError",
     "MockLLM",
     "PermissionContext",
+    "PerTenantEvidenceCache",
     "ReleaseDecision",
     "RetryBudget",
     "RetryExhaustedError",

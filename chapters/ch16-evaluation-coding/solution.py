@@ -4,6 +4,10 @@ from agentic_interview_bible import EvalCase, run_eval_cases
 
 
 def run_support_eval(responder):
+    # NOTE: the substring/keyword checks below are a deterministic stand-in for
+    # what production would use, an LLM-judge or a structured-action assertion
+    # against the agent's parsed decision. Keyword checks are fine for a
+    # teaching harness; do not ship them as your real eval predicate.
     cases = [
         EvalCase(
             name="policy_grounding",
