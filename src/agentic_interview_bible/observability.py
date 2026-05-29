@@ -11,13 +11,39 @@ class TraceEvent:
     metadata: dict[str, object]
 
 
+# Curated secret markers. Matched as substrings of the normalized key so that
+# variants (openai_api_key, user_password, bearer_token, secret_key) are caught,
+# while benign infrastructure keys that merely contain "key"/"token" (e.g.
+# idempotency_key, completion_tokens) are NOT false-positived.
+_SENSITIVE_METADATA_MARKERS = (
+    "raw_prompt",
+    "chain_of_thought",
+    "secret",
+    "password",
+    "passwd",
+    "api_key",
+    "apikey",
+    "access_token",
+    "bearer",
+    "private_key",
+    "credential",
+    "ssn",
+)
+
+
+def _is_sensitive_metadata_key(key: object) -> bool:
+    normalized = "".join(
+        character.casefold() if character.isalnum() else "_" for character in str(key)
+    )
+    return any(marker in normalized for marker in _SENSITIVE_METADATA_MARKERS)
+
+
 class InMemoryTraceSink:
     def __init__(self) -> None:
         self.events: list[TraceEvent] = []
 
     def record(self, event: TraceEvent) -> None:
-        blocked_keys = {"raw_prompt", "chain_of_thought", "secret", "api_key"}
-        if blocked_keys.intersection(event.metadata):
+        if any(_is_sensitive_metadata_key(key) for key in event.metadata):
             raise ValueError("trace metadata contains unsafe fields")
         self.events.append(event)
 

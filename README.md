@@ -59,6 +59,7 @@ The root package exposes the core interview primitives:
 Run everything locally:
 
 ```bash
+pip install -e ".[dev]"   # pytest ships as the 'dev' extra
 python3 -B -m pytest -p no:cacheprovider
 ```
 

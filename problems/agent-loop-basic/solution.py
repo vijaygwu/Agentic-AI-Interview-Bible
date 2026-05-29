@@ -1,3 +1,11 @@
+"""Standalone, deliberately reduced agent loop for this coding exercise.
+
+This is a self-contained simplification scoped to the problem. The production
+implementation, with logical-action idempotency, task budgets, sanitized
+traces, and the circuit breaker, lives in the ``agentic_interview_bible``
+package (see ``agent_loop.py``); this file intentionally reimplements a
+minimal version so the exercise stays self-contained.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

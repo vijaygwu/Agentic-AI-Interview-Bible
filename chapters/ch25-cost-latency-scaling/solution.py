@@ -20,6 +20,14 @@ def admit_task(
     high_risk: bool = False,
     read_only_fallback: bool = False,
 ) -> AdmissionDecision:
+    """Decide whether to admit a task under the budget.
+
+    This is a check-only gate: it reads current budget usage but does not
+    reserve it. Under concurrent callers that is a TOCTOU race (two tasks can
+    both observe headroom and both be admitted, overcommitting the budget).
+    Production admission control must reserve atomically, e.g. under a lock or
+    a transactional compare-and-increment on the budget counters.
+    """
     if estimated_tokens < 0 or estimated_model_calls < 1:
         return AdmissionDecision("reject", "invalid admission estimate")
 

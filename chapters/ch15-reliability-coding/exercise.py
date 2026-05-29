@@ -15,7 +15,8 @@ def call_with_retry_budget(
     - retry only configured retryable exceptions
     - stop after max_attempts
     - report each retry to observer as attempt number, exception, and delay
-    - compute deterministic capped exponential backoff without sleeping in tests
+    - compute capped exponential backoff with jitter; make it deterministic
+      under an injected rng (not by removing jitter), and do not sleep in tests
     - propagate non-retryable exceptions immediately
     - raise a typed exhaustion error when retries are spent
     """

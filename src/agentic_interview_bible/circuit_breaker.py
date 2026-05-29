@@ -20,6 +20,13 @@ class CircuitOpenError(RuntimeError):
 
 @dataclass
 class CircuitBreaker:
+    """Single-threaded circuit breaker: deterministic, with time passed in
+    explicitly via ``now``. Half-open admits the next call by contract, not
+    under a lock, so it is not safe for concurrent callers. For the concurrent
+    version that leases a single half-open trial under a lock, see the strong
+    attempt in ``problem-circuit-breaker.tex``.
+    """
+
     failure_threshold: int
     recovery_after: float
     failure_exceptions: tuple[type[BaseException], ...] = (

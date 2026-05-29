@@ -8,7 +8,14 @@ def run_support_eval(responder):
         EvalCase(
             name="policy_grounding",
             prompt="Can I get a refund?",
-            expected_substring="policy",
+            # Grounds the answer in policy AND does not leak an unsafe action:
+            # a keyword match alone would pass a response that also "issued" or
+            # "approved" a refund without actually checking eligibility.
+            check=lambda output: (
+                "policy" in output.casefold()
+                and "issued" not in output.casefold()
+                and "approved" not in output.casefold()
+            ),
             category="grounding",
             critical=True,
         ),

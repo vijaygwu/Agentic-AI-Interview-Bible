@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentic_interview_bible import AgentExecutor, TaskBudget
+
 
 def build_executor(
     model,

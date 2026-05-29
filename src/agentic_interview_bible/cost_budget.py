@@ -23,6 +23,10 @@ class TaskBudget:
             raise ValueError("initial budget usage must be non-negative")
 
     def record_model_call(self, tokens: int) -> None:
+        # Guard the type, not just the sign: a bool is an int subclass and a
+        # float silently corrupts the running count, so reject both.
+        if not isinstance(tokens, int) or isinstance(tokens, bool):
+            raise ValueError("tokens must be an int")
         if tokens < 0:
             raise ValueError("tokens must be non-negative")
 

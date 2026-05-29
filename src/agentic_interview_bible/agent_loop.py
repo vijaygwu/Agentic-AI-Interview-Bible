@@ -219,6 +219,11 @@ class AgentExecutor:
                 task_id=task_id,
                 step_index=step_index,
                 trace_id=trace_id,
+                # Loop-position key: sufficient to collapse in-task retries of
+                # this step. A side-effecting/money-moving tool must instead
+                # derive a logical-action key (see the Tool Contracts card and
+                # the idempotency-key problem); task_id/step_index then stay in
+                # trace metadata, not the key.
                 idempotency_key=f"{task_id}:{step_index}:{step.tool_call.name}",
                 deadline_ms=deadline_ms,
                 actor_id=actor_id,

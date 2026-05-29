@@ -30,6 +30,15 @@ class PermissionContext:
 
 
 class EvidenceCache:
+    """Evidence cache keyed on ``(key, policy_version)``.
+
+    Permission scoping is the caller's responsibility: this primitive does not
+    enforce tenant or actor isolation. To make isolation a property of the
+    cache rather than the wiring, include the tenant or permission prefix in
+    the ``key`` (or wrap with a per-tenant instance) so one tenant cannot read
+    another tenant's cached evidence.
+    """
+
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], Evidence] = {}
 

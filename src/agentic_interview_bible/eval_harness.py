@@ -75,7 +75,10 @@ def run_eval_cases(responder: Callable[[str], str], cases: list[EvalCase]) -> Ev
 
 
 def redact_output(output: str) -> str:
-    redacted = output[:500]
+    # Redact across the FULL string first, then truncate: a credential that
+    # begins near the 500-char boundary must be matched before we cut, or it
+    # would leak through unredacted.
+    redacted = output
     patterns = [
         r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*[A-Za-z0-9._/\-]+",
         r"sk-[A-Za-z0-9]{10,}",
@@ -87,4 +90,4 @@ def redact_output(output: str) -> str:
     ]
     for pattern in patterns:
         redacted = re.sub(pattern, "[redacted]", redacted)
-    return redacted
+    return redacted[:500]

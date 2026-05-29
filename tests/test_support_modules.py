@@ -233,6 +233,14 @@ def test_task_budget_rejects_invalid_values_before_mutating() -> None:
         budget.record_model_call(tokens=-1)
 
     assert budget.model_calls == 0
+
+    # Type guard: a bool (int subclass) or a float must be rejected so the
+    # running token count cannot be silently corrupted.
+    with pytest.raises(ValueError):
+        budget.record_model_call(tokens=True)
+    with pytest.raises(ValueError):
+        budget.record_model_call(tokens=1.5)
+    assert budget.model_calls == 0
     assert budget.tokens == 0
 
 
