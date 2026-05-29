@@ -87,6 +87,7 @@ def test_retry_budget_retries_timeout_then_succeeds() -> None:
         max_attempts=2,
         backoff=lambda attempt: attempt * 0.5,
         observer=lambda attempt, exc, delay: observed.append((attempt, delay)),
+        sleep=lambda _d: None,
     )
 
     assert budget.run(flaky) == "ok"

@@ -31,7 +31,12 @@ def test_retry_budget_wraps_flaky_operation() -> None:
             raise TimeoutError("slow tool")
         return "ok"
 
-    assert solution.call_with_retry_budget(flaky, observer=lambda attempt, exc, delay: observed.append((attempt, delay))) == "ok"
+    assert solution.call_with_retry_budget(
+        flaky,
+        observer=lambda attempt, exc, delay: observed.append((attempt, delay)),
+        sleep=lambda _d: None,
+        rng=lambda: 1.0,
+    ) == "ok"
     assert attempts["count"] == 2
     assert observed == [(1, 0.25)]
 
@@ -45,7 +50,9 @@ def test_retry_budget_exhausts_timeout() -> None:
         raise TimeoutError("still down")
 
     with pytest.raises(RetryExhaustedError):
-        solution.call_with_retry_budget(always_timeout, max_attempts=3)
+        solution.call_with_retry_budget(
+            always_timeout, max_attempts=3, sleep=lambda _d: None
+        )
 
     assert attempts["count"] == 3
 

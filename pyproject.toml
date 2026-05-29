@@ -11,6 +11,6 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "chapters"]
+testpaths = ["tests", "chapters", "problems"]
 pythonpath = ["src"]
 addopts = "-q"
