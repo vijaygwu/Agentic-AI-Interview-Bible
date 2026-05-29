@@ -225,6 +225,9 @@ class AgentExecutor:
                 # the idempotency-key problem); task_id/step_index then stay in
                 # trace metadata, not the key.
                 idempotency_key=f"{task_id}:{step_index}:{step.tool_call.name}",
+                # The base loop surfaces the deadline to each tool but does not
+                # itself abort a slow call; per-step deadline enforcement (with a
+                # typed ToolTimeoutError) is the bounded-loop-timeout exercise.
                 deadline_ms=deadline_ms,
                 actor_id=actor_id,
                 tenant_id=tenant_id,
