@@ -49,16 +49,21 @@ per-problem scaffold.
 - Add a minimal evaluation runner.
 - Add safe retrieval caching, trace records, task budgets, and release gates.
 
-The root package exposes the core interview primitives:
+The root package exposes the core interview primitives, and the public API
+matches the code printed in the book one-to-one (a few legacy aliases such as
+`RetryExhaustedError` and `TaskBudget` are retained for backward compatibility):
 
 - `AgentExecutor`, `AgentStep`, `ToolCall`, `ToolRegistry`, and typed executor
   errors for agent-loop coding rounds.
-- `StructuredOutputValidator` and `validate_refund_decision` for schema checks.
-- `RetryBudget` and `CircuitBreaker` for reliability exercises.
+- `parse_with_repair` with `ParseError`/`SchemaError`/`RepairExhausted` for
+  structured-output parsing and bounded repair.
+- `RetryBudget` (`.call()`, with jitter/backoff) and `CircuitBreaker` for
+  reliability exercises.
 - `MockLLM` for deterministic tests that can assert tool-result history.
-- `run_eval_cases` and `decide_release` for evaluation and release gates.
-- `EvidenceCache`, `TaskBudget`, and `InMemoryTraceSink` for RAG, cost, and
-  observability drills.
+- `EvalCase`, `Tier`, `run_eval_suite`, and `release_gate`/`GateDecision` for
+  evaluation and release gates.
+- `StoredDocument`/`search`, `TokenBudget`, and `Span`/`Trace` for RAG, cost,
+  and observability drills.
 
 Run everything locally:
 
