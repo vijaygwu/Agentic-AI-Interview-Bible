@@ -1,66 +1,87 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, TypeVar
+from threading import Lock
+from typing import Any, Callable
+
+from .retry_budget import RetryableError
 
 
-T = TypeVar("T")
-
-
-class BreakerState(str, Enum):
+class State(Enum):
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
 
 
-class CircuitOpenError(RuntimeError):
-    """Raised when a protected dependency is not allowed to run."""
+class CircuitOpenError(Exception):
+    """Raised when the circuit breaker rejects a call because the circuit is open."""
+
+
+class CircuitHalfOpenBusyError(Exception):
+    """Raised when a trial call is already in flight during half-open state."""
 
 
 @dataclass
 class CircuitBreaker:
-    """Single-threaded circuit breaker: deterministic, with time passed in
-    explicitly via ``now``. Half-open admits the next call by contract, not
-    under a lock, so it is not safe for concurrent callers. For the concurrent
-    version that leases a single half-open trial under a lock, see the strong
-    attempt in ``problem-circuit-breaker.tex``.
-    """
+    failure_threshold: int = 5
+    recovery_after_s: float = 30.0
+    dependency_errors: tuple = (RetryableError,)
+    clock: Callable[[], float] = field(default=time.monotonic)
+    state: State = State.CLOSED
+    _failures: int = 0
+    _opened_at: float | None = None
+    _half_open_lease: bool = False  # true while a trial call is in flight
+    _lock: Lock = field(default_factory=Lock)
+    on_state_change: Callable[[State, State], None] | None = None
 
-    failure_threshold: int
-    recovery_after: float
-    failure_exceptions: tuple[type[BaseException], ...] = (
-        TimeoutError,
-        ConnectionError,
-    )
-    state: BreakerState = BreakerState.CLOSED
-    failure_count: int = 0
-    opened_at: float | None = None
-
-    def __post_init__(self) -> None:
-        if self.failure_threshold < 1:
-            raise ValueError("failure_threshold must be positive")
-        if self.recovery_after < 0:
-            raise ValueError("recovery_after must be non-negative")
-
-    def call(self, operation: Callable[[], T], now: float) -> T:
-        if self.state == BreakerState.OPEN:
-            assert self.opened_at is not None
-            if now - self.opened_at < self.recovery_after:
-                raise CircuitOpenError("circuit is open")
-            self.state = BreakerState.HALF_OPEN
+    def call(self, fn: Callable[[], Any]) -> Any:
+        # The lease handshake guarantees half-open's one-trial semantics
+        # under concurrent callers. Without it, every caller that
+        # observes HALF_OPEN would race to execute a trial call.
+        with self._lock:
+            if self.state == State.OPEN:
+                if self.clock() - self._opened_at >= self.recovery_after_s:
+                    self._transition(State.HALF_OPEN)
+                else:
+                    raise CircuitOpenError("circuit open")
+            if self.state == State.HALF_OPEN:
+                if self._half_open_lease:
+                    raise CircuitHalfOpenBusyError("trial in flight")
+                self._half_open_lease = True
+                is_trial = True
+            else:
+                is_trial = False
 
         try:
-            result = operation()
-        except Exception as exc:
-            if isinstance(exc, self.failure_exceptions):
-                self.failure_count += 1
-                if self.failure_count >= self.failure_threshold:
-                    self.state = BreakerState.OPEN
-                    self.opened_at = now
+            result = fn()
+        except self.dependency_errors:
+            with self._lock:
+                if is_trial:
+                    self._transition(State.OPEN)
+                    self._opened_at = self.clock()
+                    self._half_open_lease = False
+                else:
+                    self._failures += 1
+                    if self._failures >= self.failure_threshold:
+                        self._transition(State.OPEN)
+                        self._opened_at = self.clock()
             raise
 
-        self.failure_count = 0
-        self.opened_at = None
-        self.state = BreakerState.CLOSED
+        with self._lock:
+            if is_trial:
+                self._transition(State.CLOSED)
+                self._half_open_lease = False
+            self._failures = 0
         return result
+
+    def _transition(self, new: State) -> None:
+        if self.on_state_change:
+            self.on_state_change(self.state, new)
+        self.state = new
+
+
+# Backward-compatibility alias so __init__.py (which must not be edited) can
+# still export BreakerState under its original name.
+BreakerState = State

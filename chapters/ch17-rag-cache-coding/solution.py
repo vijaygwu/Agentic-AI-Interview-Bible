@@ -1,39 +1,52 @@
+"""Chapter 17 solution — Embedding Store with Metadata Filters.
+
+Exact implementation of the "strong attempt" shown in the book:
+    problem-embedding-store.tex
+"""
 from __future__ import annotations
 
-from urllib.parse import quote
+import math
+from typing import Callable
 
-from agentic_interview_bible import CachePolicyError, Evidence
-
-
-def encode_key_part(value: str) -> str:
-    return quote(value, safe="")
+from agentic_interview_bible.rag_cache import Metadata, StoredDocument, SearchContext
 
 
-def scoped_cache_key(permission_context, evidence_key: str) -> str:
-    if not permission_context.actor_id or not permission_context.tenant_id or not permission_context.scopes:
-        raise CachePolicyError("permission context must include actor, tenant, and scopes")
-    scope_key = ",".join(encode_key_part(scope) for scope in sorted(permission_context.scopes))
-    return (
-        f"tenant={encode_key_part(permission_context.tenant_id)}"
-        f"|actor={encode_key_part(permission_context.actor_id)}"
-        f"|scopes={scope_key}"
-        f"|key={encode_key_part(evidence_key)}"
-    )
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
 
 
-def store_public_evidence(cache, evidence, permission_context) -> None:
-    if not evidence.source_id:
-        raise CachePolicyError("source_id is required")
-    if not evidence.policy_version:
-        raise CachePolicyError("policy_version is required")
-    if evidence.contains_sensitive_data:
-        raise CachePolicyError("sensitive evidence must not be cached")
+def _passes_filter(
+    doc: StoredDocument,
+    ctx: SearchContext,
+    extra_filter: Callable | None,
+) -> bool:
+    if doc.metadata.tenant_id != ctx.tenant_id:
+        return False
+    if doc.metadata.required_scopes - ctx.actor_scopes:
+        return False
+    if extra_filter and not extra_filter(doc.metadata):
+        return False
+    return True
 
-    scoped_evidence = Evidence(
-        key=scoped_cache_key(permission_context, evidence.key),
-        text=evidence.text,
-        source_id=evidence.source_id,
-        policy_version=evidence.policy_version,
-        contains_sensitive_data=False,
-    )
-    cache.put(scoped_evidence)
+
+def search(
+    store: list[StoredDocument],
+    query_embedding: list[float],
+    ctx: SearchContext,
+    top_k: int = 5,
+    extra_filter: Callable | None = None,
+) -> list[StoredDocument]:
+    # Pre-filter: never compute similarity for documents the actor cannot see
+    candidates = [d for d in store if _passes_filter(d, ctx, extra_filter)]
+    if not candidates:
+        return []
+    scored = [
+        (_cosine(query_embedding, d.embedding), d) for d in candidates
+    ]
+    scored.sort(key=lambda t: -t[0])
+    return [d for _, d in scored[:top_k]]

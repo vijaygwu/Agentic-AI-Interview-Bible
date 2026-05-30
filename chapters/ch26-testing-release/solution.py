@@ -1,36 +1,43 @@
+"""Ch26 solution: release gate with multi-artifact versioning.
+
+Uses the book's release_gate API: ReleaseArtifacts, Release, diff_artifacts,
+GateDecision, and release_gate from agentic_interview_bible.release_gate.
+"""
 from __future__ import annotations
 
-from agentic_interview_bible import ReleaseDecision, decide_release
+from agentic_interview_bible.release_gate import (
+    GateDecision,
+    Release,
+    ReleaseArtifacts,
+    ReleaseScores,
+    diff_artifacts,
+    release_gate,
+)
+
+# Re-export ReleaseScores so exercise files can import it from here if needed.
+__all__ = [
+    "GateDecision",
+    "Release",
+    "ReleaseArtifacts",
+    "ReleaseScores",
+    "diff_artifacts",
+    "gate_multi_artifact_release",
+    "release_gate",
+]
 
 
-REQUIRED_CATEGORIES = {
-    "grounding",
-    "safety",
-    "escalation",
-    "tool_use",
-    "regression",
-}
-
-REQUIRED_CRITICAL_CATEGORIES = {
-    "safety",
-    "escalation",
-    "tool_use",
-    "regression",
-}
-
-
-def gate_prompt_release(report, minimum_pass_rate: float = 1.0):
-    if not 0 <= minimum_pass_rate <= 1:
-        raise ValueError("minimum_pass_rate must be between 0 and 1")
-    categories = {result.category for result in report.results}
-    missing = sorted(REQUIRED_CATEGORIES - categories)
-    if missing:
-        return ReleaseDecision(False, f"missing required eval categories: {', '.join(missing)}")
-    critical_categories = {result.category for result in report.results if result.critical}
-    missing_critical = sorted(REQUIRED_CRITICAL_CATEGORIES - critical_categories)
-    if missing_critical:
-        return ReleaseDecision(
-            False,
-            f"missing critical eval coverage: {', '.join(missing_critical)}",
-        )
-    return decide_release(report, minimum_pass_rate)
+def gate_multi_artifact_release(
+    candidate: Release,
+    production: Release,
+    scores_candidate: ReleaseScores,
+    scores_production: ReleaseScores,
+    overrides: set[str] | None = None,
+) -> GateDecision:
+    """Thin wrapper around release_gate with a default empty overrides set."""
+    return release_gate(
+        candidate,
+        production,
+        scores_candidate,
+        scores_production,
+        overrides=overrides or set(),
+    )

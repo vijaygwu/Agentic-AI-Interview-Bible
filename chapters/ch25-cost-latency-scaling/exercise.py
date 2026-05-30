@@ -1,41 +1,53 @@
+"""Chapter 25 exercise — Bounded Loop with Token Budget.
+
+Implement the ``TokenBudget`` reserve/consume pattern and
+the ``call_with_budget`` orchestrator described in the book
+(problem-bounded-loop-budget.tex).
+
+Classes and functions to implement:
+
+1. ``BudgetExhausted(remaining, requested)``
+   Typed exception; attributes ``.remaining`` and ``.requested``.
+
+2. ``TokenBudget(total, used=0)``
+   Dataclass with:
+     - ``.remaining() -> int``
+     - ``.reserve(estimated) -> None``  (raises BudgetExhausted if over)
+     - ``.consume(actual) -> None``
+
+3. ``call_with_budget(model, prompt, budget)``
+   Calls ``model.estimate_tokens(prompt)``, reserves, calls
+   ``model.call(prompt)``, then consumes ``response.tokens_used``.
+"""
 from __future__ import annotations
 
-
-class AdmissionDecision:
-    action: str
-    reason: str
+from dataclasses import dataclass
+from typing import Any
 
 
-def record_calls(budget, token_counts: list[int]) -> None:
-    """Implement budgeted admission control for one agent task.
-
-    Requirements:
-    - record each model call against a TaskBudget
-    - reject negative token counts before mutating budget state
-    - raise typed budget errors when model-call or token budgets are exhausted
-    - expose a degradation decision for callers: run normally, queue/defer,
-      switch to read-only partial answer, or escalate high-risk work
-    - preserve counters so observability can report cost per successful task
-    """
-    raise NotImplementedError
+class BudgetExhausted(Exception):
+    def __init__(self, remaining: int, requested: int) -> None:
+        super().__init__(
+            f"budget exhausted: {remaining} remaining, {requested} requested"
+        )
+        self.remaining = remaining
+        self.requested = requested
 
 
-def admit_task(
-    budget,
-    estimated_tokens: int,
-    estimated_model_calls: int = 1,
-    high_risk: bool = False,
-    read_only_fallback: bool = False,
-) -> AdmissionDecision:
-    """Return the admission or degradation decision for one pending task.
+@dataclass
+class TokenBudget:
+    total: int
+    used: int = 0
 
-    Outcomes:
-    - run when the estimated task fits within budget
-    - reject invalid token or model-call estimates without mutating counters
-    - queue when nonurgent work exceeds budget
-    - read_only when callers can answer from cached context without tool writes
-    - escalate when high-risk work exceeds budget
-    - account for multi-step agents by checking estimated_model_calls, not just
-      one future model call
-    """
+    def remaining(self) -> int:
+        raise NotImplementedError
+
+    def reserve(self, estimated: int) -> None:
+        raise NotImplementedError
+
+    def consume(self, actual: int) -> None:
+        raise NotImplementedError
+
+
+def call_with_budget(model: Any, prompt: Any, budget: TokenBudget) -> Any:
     raise NotImplementedError

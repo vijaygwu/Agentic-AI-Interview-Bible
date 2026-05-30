@@ -1,9 +1,13 @@
+"""Tests for chapter 25 — Bounded Loop with Token Budget."""
+from __future__ import annotations
+
 import importlib.util
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
-from agentic_interview_bible import BudgetExceededError, TaskBudget
+from agentic_interview_bible.cost_budget import BudgetExhausted, TokenBudget
 
 
 def load_solution():
@@ -15,106 +19,111 @@ def load_solution():
     return module
 
 
-def test_record_calls_updates_budget() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=3, max_tokens=100)
-
-    solution.record_calls(budget, [10, 20])
-
-    assert budget.model_calls == 2
-    assert budget.tokens == 30
-
-
-def test_record_calls_blocks_token_budget_excess() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=3, max_tokens=10)
-
-    with pytest.raises(BudgetExceededError):
-        solution.record_calls(budget, [7, 5])
+def _mock_model(estimate: int, actual: int):
+    response = MagicMock()
+    response.tokens_used = actual
+    model = MagicMock()
+    model.estimate_tokens.return_value = estimate
+    model.call.return_value = response
+    return model
 
 
-def test_record_calls_blocks_model_call_excess() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=1, max_tokens=100)
+# ---------------------------------------------------------------------------
+# TokenBudget unit tests
+# ---------------------------------------------------------------------------
 
-    with pytest.raises(BudgetExceededError):
-        solution.record_calls(budget, [10, 10])
-
-
-def test_record_calls_rejects_negative_token_count_without_mutating() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=2, max_tokens=100)
-
-    with pytest.raises(ValueError):
-        solution.record_calls(budget, [-1])
-
-    assert budget.model_calls == 0
-    assert budget.tokens == 0
+def test_token_budget_remaining() -> None:
+    b = TokenBudget(total=100, used=30)
+    assert b.remaining() == 70
 
 
-def test_record_calls_rejects_later_negative_without_partial_mutation() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=2, max_tokens=100)
-
-    with pytest.raises(ValueError):
-        solution.record_calls(budget, [10, -1])
-
-    assert budget.model_calls == 0
-    assert budget.tokens == 0
+def test_token_budget_reserve_succeeds_within_budget() -> None:
+    b = TokenBudget(total=100)
+    b.reserve(50)  # should not raise
 
 
-def test_admit_task_returns_degradation_decisions() -> None:
-    solution = load_solution()
-
-    normal_budget = TaskBudget(max_model_calls=2, max_tokens=100)
-    assert solution.admit_task(normal_budget, estimated_tokens=10).action == "run"
-    assert normal_budget.model_calls == 0
-    assert normal_budget.tokens == 0
-
-    queue_budget = TaskBudget(max_model_calls=1, max_tokens=10)
-    assert solution.admit_task(queue_budget, estimated_tokens=11).action == "queue"
-    assert queue_budget.model_calls == 0
-    assert queue_budget.tokens == 0
-
-    partial_budget = TaskBudget(max_model_calls=1, max_tokens=10)
-    assert solution.admit_task(
-        partial_budget,
-        estimated_tokens=11,
-        read_only_fallback=True,
-    ).action == "read_only"
-    assert partial_budget.model_calls == 0
-    assert partial_budget.tokens == 0
-
-    risk_budget = TaskBudget(max_model_calls=1, max_tokens=10)
-    assert solution.admit_task(
-        risk_budget,
-        estimated_tokens=11,
-        high_risk=True,
-    ).action == "escalate"
-    assert risk_budget.model_calls == 0
-    assert risk_budget.tokens == 0
-
-    invalid_budget = TaskBudget(max_model_calls=1, max_tokens=10)
-    assert solution.admit_task(invalid_budget, estimated_tokens=-1).action == "reject"
-
-    invalid_calls_budget = TaskBudget(max_model_calls=1, max_tokens=10)
-    assert solution.admit_task(
-        invalid_calls_budget,
-        estimated_tokens=1,
-        estimated_model_calls=0,
-    ).action == "reject"
+def test_token_budget_reserve_raises_when_over() -> None:
+    b = TokenBudget(total=100, used=80)
+    with pytest.raises(BudgetExhausted) as exc_info:
+        b.reserve(30)
+    assert exc_info.value.remaining == 20
+    assert exc_info.value.requested == 30
 
 
-def test_admit_task_accounts_for_multi_call_agents_without_mutating() -> None:
-    solution = load_solution()
-    budget = TaskBudget(max_model_calls=2, max_tokens=1_000)
+def test_token_budget_reserve_does_not_mutate_used() -> None:
+    b = TokenBudget(total=100)
+    b.reserve(50)
+    assert b.used == 0  # reserve is a check, not a deduction
 
-    decision = solution.admit_task(
-        budget,
-        estimated_tokens=100,
-        estimated_model_calls=3,
-    )
 
-    assert decision.action == "queue"
-    assert budget.model_calls == 0
-    assert budget.tokens == 0
+def test_token_budget_consume_updates_used() -> None:
+    b = TokenBudget(total=100)
+    b.consume(40)
+    assert b.used == 40
+    b.consume(25)
+    assert b.used == 65
+
+
+# ---------------------------------------------------------------------------
+# Pre-call check (reserve raises before the call)
+# ---------------------------------------------------------------------------
+
+def test_pre_call_check_rejects_over_budget_call() -> None:
+    sol = load_solution()
+    budget = TokenBudget(total=50, used=40)
+    # estimate=20, but only 10 remaining -> should raise before model.call
+    model = _mock_model(estimate=20, actual=20)
+
+    with pytest.raises(BudgetExhausted):
+        sol.call_with_budget(model, "prompt", budget)
+
+    model.call.assert_not_called()
+
+
+def test_pre_call_check_passes_within_budget() -> None:
+    sol = load_solution()
+    budget = TokenBudget(total=100)
+    model = _mock_model(estimate=30, actual=25)
+
+    response = sol.call_with_budget(model, "prompt", budget)
+
+    model.call.assert_called_once_with("prompt")
+    assert response is model.call.return_value
+
+
+# ---------------------------------------------------------------------------
+# Post-call accounting (consume uses actual, not estimate)
+# ---------------------------------------------------------------------------
+
+def test_post_call_accounting_uses_actual_tokens() -> None:
+    sol = load_solution()
+    budget = TokenBudget(total=100)
+    # estimate says 30, actual is 25
+    model = _mock_model(estimate=30, actual=25)
+
+    sol.call_with_budget(model, "prompt", budget)
+
+    assert budget.used == 25  # actual, not estimate
+
+
+def test_post_call_accounting_accumulates_across_calls() -> None:
+    sol = load_solution()
+    budget = TokenBudget(total=200)
+    model = _mock_model(estimate=30, actual=20)
+
+    sol.call_with_budget(model, "p1", budget)
+    sol.call_with_budget(model, "p2", budget)
+
+    assert budget.used == 40
+
+
+# ---------------------------------------------------------------------------
+# BudgetExhausted exception attributes
+# ---------------------------------------------------------------------------
+
+def test_budget_exhausted_carries_remaining_and_requested() -> None:
+    exc = BudgetExhausted(remaining=10, requested=50)
+    assert exc.remaining == 10
+    assert exc.requested == 50
+    assert "10" in str(exc)
+    assert "50" in str(exc)

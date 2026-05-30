@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from agentic_interview_bible.structured_outputs import RefundDecision
 
-def parse_refund_decision(payload: dict[str, object]) -> dict[str, object]:
-    """Validate and return a structured refund decision.
+
+def parse_refund_decision(raw: str) -> RefundDecision:
+    """Parse and validate a raw JSON string against the RefundDecision schema.
 
     Requirements:
     - decision must be one of approve, deny, or escalate
-    - amount_cents must be an integer and cannot be negative
-    - requires_human_approval must be a real boolean, not 0 or 1
-    - evidence_ids must be a non-empty list of strings
-    - policy_version must be present so the decision is auditable
+    - amount_cents must be an int (or null/None), not a bool, and non-negative
+    - reason_code must be a non-empty string
+    - confidence must be a float in [0, 1], not a bool
+    - Extra fields are rejected
+    - Raises ParseError on malformed JSON
+    - Raises SchemaError on valid JSON that violates the contract
     """
     raise NotImplementedError

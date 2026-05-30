@@ -3,7 +3,23 @@ from pathlib import Path
 
 import pytest
 
-from agentic_interview_bible import StructuredOutputError
+from agentic_interview_bible.structured_outputs import (
+    ParseError,
+    RefundDecision,
+    RepairExhausted,
+    SchemaError,
+    parse_strict,
+    parse_with_repair,
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+VALID_JSON = (
+    '{"decision": "approve", "amount_cents": 5000, '
+    '"reason_code": "policy_match", "confidence": 0.92}'
+)
 
 
 def load_solution():
@@ -15,78 +31,141 @@ def load_solution():
     return module
 
 
-def test_parse_refund_decision() -> None:
+# ---------------------------------------------------------------------------
+# Test 1: Happy path
+# ---------------------------------------------------------------------------
+
+def test_happy_path() -> None:
     solution = load_solution()
-    decision = solution.parse_refund_decision(
-        {
-            "decision": "deny",
-            "amount_cents": 0,
-            "policy_version": "refunds-2026-05",
-            "requires_human_approval": False,
-            "evidence_ids": ["policy-1"],
-        }
+    result = solution.parse_refund_decision(VALID_JSON)
+    assert isinstance(result, RefundDecision)
+    assert result.decision == "approve"
+    assert result.amount_cents == 5000
+    assert result.reason_code == "policy_match"
+    assert result.confidence == pytest.approx(0.92)
+
+
+# ---------------------------------------------------------------------------
+# Test 2: Malformed JSON raises ParseError
+# ---------------------------------------------------------------------------
+
+def test_malformed_json_raises_parse_error() -> None:
+    solution = load_solution()
+    with pytest.raises(ParseError):
+        solution.parse_refund_decision('{"decision": "approve"')
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Missing required field raises SchemaError
+# ---------------------------------------------------------------------------
+
+def test_missing_field_raises_schema_error() -> None:
+    solution = load_solution()
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision('{"decision": "approve"}')
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Invalid enum value raises SchemaError
+# ---------------------------------------------------------------------------
+
+def test_invalid_decision_value_raises_schema_error() -> None:
+    solution = load_solution()
+    bad = (
+        '{"decision": "maybe", "amount_cents": null, '
+        '"reason_code": "x", "confidence": 0.5}'
     )
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision(bad)
 
-    assert decision["decision"] == "deny"
 
+# ---------------------------------------------------------------------------
+# Test 5: Extra fields rejected
+# ---------------------------------------------------------------------------
 
-def test_parse_refund_decision_rejects_missing_required_field() -> None:
+def test_extra_fields_rejected() -> None:
     solution = load_solution()
-
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision(
-            {
-                "decision": "deny",
-                "amount_cents": 0,
-                "policy_version": "refunds-2026-05",
-                "requires_human_approval": False,
-            }
-        )
+    bad = (
+        '{"decision": "approve", "amount_cents": 5000, '
+        '"reason_code": "x", "confidence": 0.5, '
+        '"extra_authorization": "admin"}'
+    )
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision(bad)
 
 
-def test_parse_refund_decision_rejects_bad_type() -> None:
+# ---------------------------------------------------------------------------
+# Test 6: Bool not accepted as int
+# ---------------------------------------------------------------------------
+
+def test_bool_not_accepted_as_int() -> None:
     solution = load_solution()
-
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision(
-            {
-                "decision": "approve",
-                "amount_cents": "0",
-                "policy_version": "refunds-2026-05",
-                "requires_human_approval": False,
-                "evidence_ids": ["policy-1"],
-            }
-        )
+    bad = (
+        '{"decision": "approve", "amount_cents": true, '
+        '"reason_code": "x", "confidence": 0.5}'
+    )
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision(bad)
 
 
-def test_parse_refund_decision_rejects_invalid_decision_value() -> None:
+# ---------------------------------------------------------------------------
+# Test 7: Numeric out of range raises SchemaError
+# ---------------------------------------------------------------------------
+
+def test_confidence_out_of_range() -> None:
     solution = load_solution()
-
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision(
-            {
-                "decision": "maybe",
-                "amount_cents": 0,
-                "policy_version": "refunds-2026-05",
-                "requires_human_approval": False,
-                "evidence_ids": ["policy-1"],
-            }
-        )
+    bad = (
+        '{"decision": "approve", "amount_cents": 0, '
+        '"reason_code": "x", "confidence": 1.5}'
+    )
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision(bad)
 
 
-def test_parse_refund_decision_rejects_negative_amount_bool_amount_and_empty_evidence() -> None:
-    solution = load_solution()
-    base = {
-        "decision": "approve",
-        "amount_cents": 0,
-        "policy_version": "refunds-2026-05",
-        "requires_human_approval": False,
-        "evidence_ids": ["policy-1"],
-    }
+# ---------------------------------------------------------------------------
+# Test 8: Repair success
+# ---------------------------------------------------------------------------
 
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision({**base, "amount_cents": -1})
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision({**base, "amount_cents": True})
-    with pytest.raises(StructuredOutputError):
-        solution.parse_refund_decision({**base, "evidence_ids": []})
+def test_repair_success() -> None:
+    def repair(raw: str, err: Exception) -> str:
+        return raw + "}"  # adds the missing closing brace
+
+    bad = (
+        '{"decision": "approve", "amount_cents": 5000, '
+        '"reason_code": "x", "confidence": 0.5'
+    )
+    result = parse_with_repair(bad, repair, max_repairs=1)
+    assert result.decision == "approve"
+
+
+# ---------------------------------------------------------------------------
+# Test 9: Repair failure raises RepairExhausted
+# ---------------------------------------------------------------------------
+
+def test_repair_failure_raises_repair_exhausted() -> None:
+    def bad_repair(raw: str, err: Exception) -> str:
+        return raw  # returns the same broken input
+
+    with pytest.raises(RepairExhausted):
+        parse_with_repair("not json", bad_repair, max_repairs=1)
+
+
+# ---------------------------------------------------------------------------
+# Test 10: max_repairs=0 fails closed without calling repair
+# ---------------------------------------------------------------------------
+
+def test_no_repair_budget_fails_closed() -> None:
+    calls: list[int] = []
+
+    def repair(raw: str, err: Exception) -> str:
+        calls.append(1)
+        return raw + "}"  # would have worked
+
+    bad = (
+        '{"decision": "approve", "amount_cents": 5000, '
+        '"reason_code": "x", "confidence": 0.5'
+    )
+    with pytest.raises(RepairExhausted):
+        parse_with_repair(bad, repair, max_repairs=0)
+
+    assert calls == [], "repair must not be called when max_repairs=0"

@@ -1,4 +1,9 @@
-"""Companion code for The AI Agent Engineer Interview Bible."""
+"""Companion code for The AI Agent Engineer Interview Bible.
+
+The public API mirrors the code printed in the book. A handful of legacy
+aliases (e.g. ``RetryExhaustedError`` for ``RetryExhausted``) are retained for
+backward compatibility.
+"""
 
 from .agent_loop import (
     AgentExecutor,
@@ -16,24 +21,84 @@ from .agent_loop import (
     ToolResult,
     UnknownToolError,
 )
-from .circuit_breaker import BreakerState, CircuitBreaker, CircuitOpenError
-from .cost_budget import BudgetExceededError, TaskBudget
-from .eval_harness import EvalCase, EvalReport, EvalResult, redact_output, run_eval_cases
+from .circuit_breaker import (
+    BreakerState,
+    CircuitBreaker,
+    CircuitHalfOpenBusyError,
+    CircuitOpenError,
+    State,
+)
+from .cost_budget import (
+    BudgetExceededError,
+    BudgetExhausted,
+    TaskBudget,
+    TokenBudget,
+    call_with_budget,
+)
+from .eval_harness import (
+    EvalCase,
+    EvalReport,
+    EvalResult,
+    ExpectEscalation,
+    ExpectRefusal,
+    ExpectSuccess,
+    ReleaseBudgets,
+    ReleaseScores,
+    Tier,
+    redact_output,
+    run_eval_cases,
+    run_eval_suite,
+)
 from .mock_llm import MockLLM, ScriptedStep
-from .observability import InMemoryTraceSink, TraceEvent
+from .observability import (
+    InMemoryTraceSink,
+    SAFE_ATTRS,
+    Span,
+    SpanStatus,
+    SpanType,
+    Trace,
+    TraceEvent,
+)
 from .rag_cache import (
     CachePolicyError,
     Evidence,
     EvidenceCache,
+    Metadata,
     PermissionContext,
     PerTenantEvidenceCache,
+    SearchContext,
+    StoredDocument,
+    search,
 )
-from .release_gate import ReleaseDecision, decide_release
-from .retry_budget import RetryBudget, RetryExhaustedError
+from .release_gate import (
+    CanaryPlan,
+    GateDecision,
+    Release,
+    ReleaseArtifacts,
+    ReleaseDecision,
+    RollbackPlan,
+    decide_release,
+    diff_artifacts,
+    regression_gate,
+    release_gate,
+)
+from .retry_budget import (
+    RetryBudget,
+    RetryExhausted,
+    RetryExhaustedError,
+    RetryableError,
+)
 from .structured_outputs import (
     FieldSpec,
+    ParseError,
+    RefundDecision,
+    RepairExhausted,
+    RepairFn,
+    SchemaError,
     StructuredOutputError,
     StructuredOutputValidator,
+    parse_strict,
+    parse_with_repair,
     validate_refund_decision,
 )
 
@@ -44,8 +109,11 @@ __all__ = [
     "AllowListedToolAuthorizer",
     "BreakerState",
     "BudgetExceededError",
+    "BudgetExhausted",
     "CachePolicyError",
+    "CanaryPlan",
     "CircuitBreaker",
+    "CircuitHalfOpenBusyError",
     "CircuitOpenError",
     "DuplicateToolError",
     "EvalCase",
@@ -53,32 +121,67 @@ __all__ = [
     "EvalResult",
     "Evidence",
     "EvidenceCache",
+    "ExpectEscalation",
+    "ExpectRefusal",
+    "ExpectSuccess",
     "FieldSpec",
+    "GateDecision",
     "InMemoryTraceSink",
     "InvalidAgentStepError",
     "MaxStepsExceededError",
+    "Metadata",
     "MockLLM",
+    "ParseError",
     "PermissionContext",
     "PerTenantEvidenceCache",
+    "RefundDecision",
+    "Release",
+    "ReleaseArtifacts",
+    "ReleaseBudgets",
     "ReleaseDecision",
+    "ReleaseScores",
+    "RepairExhausted",
+    "RepairFn",
     "RetryBudget",
+    "RetryExhausted",
     "RetryExhaustedError",
+    "RetryableError",
+    "RollbackPlan",
+    "SAFE_ATTRS",
+    "SchemaError",
     "ScriptedStep",
+    "SearchContext",
+    "Span",
+    "SpanStatus",
+    "SpanType",
+    "State",
+    "StoredDocument",
     "StructuredOutputError",
     "StructuredOutputValidator",
     "TaskBudget",
+    "Tier",
+    "TokenBudget",
     "ToolAuthorizationError",
     "ToolCall",
     "ToolExecutionContext",
     "ToolExecutionError",
     "ToolRegistry",
     "ToolResult",
+    "Trace",
     "TraceEvent",
     "UnknownToolError",
     "__version__",
+    "call_with_budget",
     "decide_release",
+    "diff_artifacts",
+    "parse_strict",
+    "parse_with_repair",
     "redact_output",
+    "regression_gate",
+    "release_gate",
     "run_eval_cases",
+    "run_eval_suite",
+    "search",
     "validate_refund_decision",
 ]
 

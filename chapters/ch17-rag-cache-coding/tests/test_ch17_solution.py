@@ -1,14 +1,14 @@
+"""Tests for chapter 17 — Embedding Store with Metadata Filters."""
+from __future__ import annotations
+
 import importlib.util
+import math
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from agentic_interview_bible import (
-    CachePolicyError,
-    Evidence,
-    EvidenceCache,
-    PermissionContext,
-)
+from agentic_interview_bible.rag_cache import Metadata, StoredDocument, SearchContext
 
 
 def load_solution():
@@ -20,87 +20,130 @@ def load_solution():
     return module
 
 
-def test_store_public_evidence() -> None:
-    solution = load_solution()
-    cache = EvidenceCache()
-    evidence = Evidence("refund", "policy text", "policy-1", "v1")
-    permission = PermissionContext(
-        actor_id="user-1",
-        tenant_id="tenant-1",
-        scopes=("policy:read",),
+def _make_doc(
+    doc_id: str,
+    embedding: list[float],
+    tenant_id: str = "tenant-a",
+    required_scopes: frozenset[str] = frozenset(),
+    class_: str = "kb_article",
+) -> StoredDocument:
+    return StoredDocument(
+        id=doc_id,
+        embedding=embedding,
+        metadata=Metadata(
+            tenant_id=tenant_id,
+            required_scopes=required_scopes,
+            class_=class_,
+            last_modified=datetime(2025, 1, 1),
+        ),
     )
 
-    solution.store_public_evidence(cache, evidence, permission)
 
-    scoped_key = solution.scoped_cache_key(permission, evidence.key)
-    assert cache.get(scoped_key, "v1").source_id == "policy-1"
-    assert cache.get("refund", "v1") is None
+def test_search_returns_top_k_by_similarity() -> None:
+    sol = load_solution()
+    # Three docs in tenant-a; query is identical to doc-1.
+    doc1 = _make_doc("doc-1", [1.0, 0.0])
+    doc2 = _make_doc("doc-2", [0.0, 1.0])
+    doc3 = _make_doc("doc-3", [0.707, 0.707])
+    store = [doc1, doc2, doc3]
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+
+    results = sol.search(store, [1.0, 0.0], ctx, top_k=2)
+
+    assert results[0].id == "doc-1"
+    assert len(results) == 2
 
 
-def test_store_public_evidence_encodes_delimiter_bearing_key_parts() -> None:
-    solution = load_solution()
-    cache = EvidenceCache()
-    evidence = Evidence("refund|key=x", "policy text", "policy-1", "v1")
-    permission = PermissionContext(
-        actor_id="user|actor=2",
-        tenant_id="tenant|actor=user",
-        scopes=("policy:read", "scope|key=refund"),
+def test_cross_tenant_isolation() -> None:
+    """Tenant A's query must never return tenant B's documents."""
+    sol = load_solution()
+    # doc-b is semantically identical to the query but belongs to tenant-b.
+    doc_a = _make_doc("doc-a", [1.0, 0.0], tenant_id="tenant-a")
+    doc_b = _make_doc("doc-b", [1.0, 0.0], tenant_id="tenant-b")
+    store = [doc_a, doc_b]
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+
+    results = sol.search(store, [1.0, 0.0], ctx, top_k=5)
+
+    ids = [d.id for d in results]
+    assert "doc-b" not in ids
+    assert "doc-a" in ids
+
+
+def test_scope_check_excludes_insufficient_actor() -> None:
+    sol = load_solution()
+    doc = _make_doc(
+        "doc-restricted",
+        [1.0, 0.0],
+        required_scopes=frozenset({"admin"}),
+    )
+    store = [doc]
+    # Actor only has "read", not "admin"
+    ctx = SearchContext(
+        tenant_id="tenant-a",
+        actor_scopes=frozenset({"read"}),
     )
 
-    solution.store_public_evidence(cache, evidence, permission)
+    results = sol.search(store, [1.0, 0.0], ctx)
 
-    unsafe_key = "tenant=tenant|actor=user|actor=user|actor=2|scopes=policy:read,scope|key=refund|key=refund|key=x"
-    safe_key = solution.scoped_cache_key(permission, evidence.key)
-    assert safe_key != unsafe_key
-    assert "%7C" in safe_key
-    assert cache.get(safe_key, "v1").source_id == "policy-1"
-    assert cache.get(unsafe_key, "v1") is None
+    assert results == []
 
 
-def test_store_public_evidence_rejects_sensitive_data() -> None:
-    solution = load_solution()
-    cache = EvidenceCache()
-    evidence = Evidence(
-        "customer-note",
-        "private customer note",
-        "crm-1",
-        "v1",
-        contains_sensitive_data=True,
+def test_scope_check_admits_sufficient_actor() -> None:
+    sol = load_solution()
+    doc = _make_doc(
+        "doc-restricted",
+        [1.0, 0.0],
+        required_scopes=frozenset({"admin"}),
     )
-    permission = PermissionContext(
-        actor_id="user-1",
-        tenant_id="tenant-1",
-        scopes=("crm:read",),
+    store = [doc]
+    ctx = SearchContext(
+        tenant_id="tenant-a",
+        actor_scopes=frozenset({"read", "admin"}),
     )
 
-    with pytest.raises(CachePolicyError):
-        solution.store_public_evidence(cache, evidence, permission)
+    results = sol.search(store, [1.0, 0.0], ctx)
+
+    assert len(results) == 1
+    assert results[0].id == "doc-restricted"
 
 
-def test_store_public_evidence_requires_source_policy_and_permission_context() -> None:
-    solution = load_solution()
-    cache = EvidenceCache()
-    permission = PermissionContext(
-        actor_id="user-1",
-        tenant_id="tenant-1",
-        scopes=("policy:read",),
+def test_empty_store_returns_empty_list() -> None:
+    sol = load_solution()
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+    results = sol.search([], [1.0, 0.0], ctx)
+    assert results == []
+
+
+def test_extra_filter_applied_before_similarity() -> None:
+    sol = load_solution()
+    doc_policy = _make_doc("doc-policy", [1.0, 0.0], class_="policy")
+    doc_kb = _make_doc("doc-kb", [1.0, 0.0], class_="kb_article")
+    store = [doc_policy, doc_kb]
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+
+    # Only return policy-class documents
+    results = sol.search(
+        store,
+        [1.0, 0.0],
+        ctx,
+        extra_filter=lambda m: m.class_ == "policy",
     )
 
-    with pytest.raises(CachePolicyError):
-        solution.store_public_evidence(
-            cache,
-            Evidence("refund", "policy text", "", "v1"),
-            permission,
-        )
-    with pytest.raises(CachePolicyError):
-        solution.store_public_evidence(
-            cache,
-            Evidence("refund", "policy text", "policy-1", ""),
-            permission,
-        )
-    with pytest.raises(CachePolicyError):
-        solution.store_public_evidence(
-            cache,
-            Evidence("refund", "policy text", "policy-1", "v1"),
-            PermissionContext(actor_id="user-1", tenant_id="", scopes=("policy:read",)),
-        )
+    ids = [d.id for d in results]
+    assert "doc-policy" in ids
+    assert "doc-kb" not in ids
+
+
+def test_passes_filter_rejects_wrong_tenant() -> None:
+    sol = load_solution()
+    doc = _make_doc("d", [1.0], tenant_id="tenant-b")
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+    assert sol._passes_filter(doc, ctx, None) is False
+
+
+def test_passes_filter_accepts_matching_tenant_no_scopes() -> None:
+    sol = load_solution()
+    doc = _make_doc("d", [1.0], tenant_id="tenant-a")
+    ctx = SearchContext(tenant_id="tenant-a", actor_scopes=frozenset())
+    assert sol._passes_filter(doc, ctx, None) is True
