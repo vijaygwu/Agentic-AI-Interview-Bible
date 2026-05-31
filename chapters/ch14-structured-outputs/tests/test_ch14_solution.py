@@ -109,6 +109,20 @@ def test_bool_not_accepted_as_int() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Test 6b: Empty reason_code raises SchemaError
+# ---------------------------------------------------------------------------
+
+def test_empty_reason_code_raises_schema_error() -> None:
+    solution = load_solution()
+    bad = (
+        '{"decision": "approve", "amount_cents": 0, '
+        '"reason_code": "", "confidence": 0.5}'
+    )
+    with pytest.raises(SchemaError):
+        solution.parse_refund_decision(bad)
+
+
+# ---------------------------------------------------------------------------
 # Test 7: Numeric out of range raises SchemaError
 # ---------------------------------------------------------------------------
 
