@@ -65,12 +65,21 @@ matches the code printed in the book one-to-one (a few legacy aliases such as
 - `StoredDocument`/`search`, `TokenBudget`, and `Span`/`Trace` for RAG, cost,
   and observability drills.
 
-Run everything locally:
+## Running It
+
+Requires **Python 3.11+** and has **no third-party runtime dependencies** (the
+package is pure standard library; `pytest` is the only `dev` extra). Run
+everything locally:
 
 ```bash
 pip install -e ".[dev]"   # pytest ships as the 'dev' extra
 python3 -B -m pytest -p no:cacheprovider
 ```
+
+The full suite is deterministic and offline (no live model, no network): clocks,
+sleeps, jitter, and model responses are all injected. Every primitive listed
+above is exercised by the tests, and the code mirrors what is printed in the
+book one-to-one, so anything you read you can also run.
 
 ## External Repository
 
