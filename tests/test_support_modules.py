@@ -159,6 +159,31 @@ def test_circuit_breaker_ignores_non_dependency_exception() -> None:
     assert breaker.state == BreakerState.CLOSED
 
 
+def test_circuit_breaker_half_open_releases_lease_on_non_dependency_error() -> None:
+    # A non-dependency error during the half-open trial must release the
+    # trial lease, or the breaker wedges in HALF_OPEN forever.
+    now = [0.0]
+    breaker = CircuitBreaker(
+        failure_threshold=1,
+        recovery_after_s=10.0,
+        dependency_errors=(RetryableError,),
+        clock=lambda: now[0],
+    )
+
+    with pytest.raises(RetryableError):
+        breaker.call(lambda: (_ for _ in ()).throw(RetryableError("down")))
+    assert breaker.state == BreakerState.OPEN
+
+    # Recover into half-open; the trial call raises a non-dependency error.
+    now[0] = 11.0
+    with pytest.raises(ValueError):
+        breaker.call(lambda: (_ for _ in ()).throw(ValueError("bug")))
+
+    # The breaker is not wedged: a subsequent successful trial closes it.
+    assert breaker.call(lambda: "recovered") == "recovered"
+    assert breaker.state == BreakerState.CLOSED
+
+
 def test_eval_harness_and_release_gate() -> None:
     report = run_eval_suite(
         responder=lambda prompt: f"{prompt} approved with policy",

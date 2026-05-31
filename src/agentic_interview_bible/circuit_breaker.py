@@ -68,6 +68,16 @@ class CircuitBreaker:
                         self._transition(State.OPEN)
                         self._opened_at = self.clock()
             raise
+        except BaseException:
+            # A non-dependency error is a bug in the operation, not a
+            # dependency outage: it does not count toward the threshold and
+            # does not open the circuit. But the half-open trial lease must
+            # still be released, or the breaker wedges in HALF_OPEN forever
+            # and every later caller gets CircuitHalfOpenBusyError.
+            with self._lock:
+                if is_trial:
+                    self._half_open_lease = False
+            raise
 
         with self._lock:
             if is_trial:
